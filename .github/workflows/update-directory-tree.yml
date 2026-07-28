@@ -1,0 +1,80 @@
+name: Update Directory Structure in README
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - 'README.md'
+      - '.github/**'
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Generate Directory Tree and Update README
+        run: |
+          python -c "
+          import os, re
+
+          # Directories and files to ignore in the directory tree
+          IGNORE_DIRS = {'.git', '.github', '__pycache__', '.pytest_cache'}
+          IGNORE_FILES = {'README.md', '.gitignore', '.DS_Store'}
+
+          def generate_tree(dir_path='.', prefix=''):
+              tree_str = ''
+              entries = sorted(os.listdir(dir_path))
+              entries = [e for e in entries if e not in IGNORE_DIRS and e not in IGNORE_FILES and not e.startswith('.')]
+              
+              count = len(entries)
+              for i, entry in enumerate(entries):
+                  path = os.path.join(dir_path, entry)
+                  is_last = (i == count - 1)
+                  connector = '└── ' if is_last else '├── '
+                  tree_str += f'{prefix}{connector}{entry}\n'
+                  
+                  if os.path.isdir(path):
+                      extension = '    ' if is_last else '│   '
+                      tree_str += generate_tree(path, prefix + extension)
+              return tree_str
+
+          tree_output = '```\n. (Root)\n' + generate_tree('.') + '```'
+
+          readme_path = 'README.md'
+          if not os.path.exists(readme_path):
+              with open(readme_path, 'w') as f:
+                  f.write('# SAR-s-Special\n\n## 📁 Directory Structure\n\n<!-- START_TREE -->\n<!-- END_TREE -->\n')
+
+          with open(readme_path, 'r', encoding='utf-8') as f:
+              content = f.read()
+
+          pattern = r'<!-- START_TREE -->[\s\S]*?<!-- END_TREE -->'
+          replacement = f'<!-- START_TREE -->\n{tree_output}\n<!-- END_TREE -->'
+
+          if re.search(pattern, content):
+              new_content = re.sub(pattern, replacement, content)
+          else:
+              new_content = content + f'\n\n## 📁 Directory Structure\n\n{replacement}\n'
+
+          with open(readme_path, 'w', encoding='utf-8') as f:
+              f.write(new_content)
+          "
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: update directory structure in README [skip ci]"
+          branch: ${{ github.ref_name }}
